@@ -9,7 +9,7 @@ from net.model import PromptIR
 
 from utils.dataset_utils import TestSpecificDataset
 from utils.image_io import save_image_tensor
-import lightning.pytorch as pl
+import pytorch_lightning as pl
 import torch.nn.functional as F
 import torch.nn as nn 
 import os

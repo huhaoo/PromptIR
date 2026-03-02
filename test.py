@@ -13,7 +13,7 @@ from utils.val_utils import AverageMeter, compute_psnr_ssim
 from utils.image_io import save_image_tensor
 from net.model import PromptIR
 
-import lightning.pytorch as pl
+import pytorch_lightning as pl
 import torch.nn.functional as F
 
 class PromptIRModel(pl.LightningModule):

@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+import os
 
 from utils.dataset_utils import PromptTrainDataset
 from net.model import PromptIR
@@ -12,9 +13,9 @@ from utils.schedulers import LinearWarmupCosineAnnealingLR
 import numpy as np
 import wandb
 from options import options as opt
-import lightning.pytorch as pl
-from lightning.pytorch.loggers import WandbLogger,TensorBoardLogger
-from lightning.pytorch.callbacks import ModelCheckpoint
+import pytorch_lightning as pl
+from pytorch_lightning.loggers import WandbLogger,TensorBoardLogger
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 
 class PromptIRModel(pl.LightningModule):
@@ -66,8 +67,18 @@ def main():
                              drop_last=True, num_workers=opt.num_workers)
     
     model = PromptIRModel()
-    
-    trainer = pl.Trainer( max_epochs=opt.epochs,accelerator="gpu",devices=opt.num_gpus,strategy="ddp_find_unused_parameters_true",logger=logger,callbacks=[checkpoint_callback])
+
+    if torch.cuda.is_available() and opt.num_gpus > 0:
+        devices = min(opt.num_gpus, torch.cuda.device_count())
+        trainer_kwargs = dict(max_epochs=opt.epochs, accelerator="gpu", devices=devices,
+                              logger=logger, callbacks=[checkpoint_callback])
+        if devices > 1:
+            trainer_kwargs["strategy"] = "ddp"
+    else:
+        trainer_kwargs = dict(max_epochs=opt.epochs, accelerator="cpu", devices=1,
+                              logger=logger, callbacks=[checkpoint_callback])
+
+    trainer = pl.Trainer(**trainer_kwargs)
     trainer.fit(model=model, train_dataloaders=trainloader)
 
 
