@@ -38,13 +38,16 @@ class PromptIRModel(pl.LightningModule):
         self.log("train_loss", loss)
         return loss
     
-    def lr_scheduler_step(self,scheduler,metric):
+    def lr_scheduler_step(self, scheduler, optimizer_idx, metric):
         scheduler.step(self.current_epoch)
-        lr = scheduler.get_lr()
     
     def configure_optimizers(self):
-        optimizer = optim.AdamW(self.parameters(), lr=2e-4)
-        scheduler = LinearWarmupCosineAnnealingLR(optimizer=optimizer,warmup_epochs=15,max_epochs=150)
+        optimizer = optim.AdamW(self.parameters(), lr=opt.lr)
+        scheduler = LinearWarmupCosineAnnealingLR(
+            optimizer=optimizer,
+            warmup_epochs=15,
+            max_epochs=opt.epochs,
+        )
 
         return [optimizer],[scheduler]
 
@@ -71,12 +74,14 @@ def main():
     if torch.cuda.is_available() and opt.num_gpus > 0:
         devices = min(opt.num_gpus, torch.cuda.device_count())
         trainer_kwargs = dict(max_epochs=opt.epochs, accelerator="gpu", devices=devices,
-                              logger=logger, callbacks=[checkpoint_callback])
+                              logger=logger, callbacks=[checkpoint_callback],
+                              accumulate_grad_batches=opt.accumulate_grad_batches)
         if devices > 1:
             trainer_kwargs["strategy"] = "ddp"
     else:
         trainer_kwargs = dict(max_epochs=opt.epochs, accelerator="cpu", devices=1,
-                              logger=logger, callbacks=[checkpoint_callback])
+                              logger=logger, callbacks=[checkpoint_callback],
+                              accumulate_grad_batches=opt.accumulate_grad_batches)
 
     trainer = pl.Trainer(**trainer_kwargs)
     trainer.fit(model=model, train_dataloaders=trainloader)

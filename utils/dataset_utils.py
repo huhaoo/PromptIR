@@ -21,7 +21,11 @@ class PromptTrainDataset(Dataset):
         self.D = Degradation(args)
         self.de_temp = 0
         self.de_type = self.args.de_type
+        self.data_split = getattr(self.args, 'data_split', 'train')
+        self.degradation_size = getattr(self.args, 'degradation_size', 8192)
+        self.denoise_level_size = max(1, self.degradation_size // 2)
         print(self.de_type)
+        print("Data split : {}".format(self.data_split))
 
         self.de_dict = {'denoise_15': 0, 'denoise_25': 1, 'denoise_50': 2, 'derain': 3, 'dehaze': 4, 'deblur' : 5}
 
@@ -35,6 +39,30 @@ class PromptTrainDataset(Dataset):
 
         self.toTensor = ToTensor()
 
+    def _build_fixed_size_ids(self, clean_ids, de_type, target_size):
+        tagged_ids = [{"clean_id": x, "de_type": de_type} for x in clean_ids]
+        if target_size <= 0:
+            return []
+        if len(tagged_ids) == 0:
+            return []
+
+        if len(tagged_ids) >= target_size:
+            out_ids = random.sample(tagged_ids, target_size)
+        else:
+            repeat = (target_size + len(tagged_ids) - 1) // len(tagged_ids)
+            out_ids = (tagged_ids * repeat)[:target_size]
+
+        random.shuffle(out_ids)
+        return out_ids
+
+    def _resolve_manifest(self, sub_dir, base_name):
+        split_name = f"{base_name}_{self.data_split}.txt"
+        split_path = os.path.join(self.args.data_file_dir, sub_dir, split_name)
+        default_path = os.path.join(self.args.data_file_dir, sub_dir, f"{base_name}.txt")
+        if os.path.exists(split_path):
+            return split_path
+        return default_path
+
     def _init_ids(self):
         if 'denoise_15' in self.de_type or 'denoise_25' in self.de_type or 'denoise_50' in self.de_type:
             self._init_clean_ids()
@@ -46,7 +74,7 @@ class PromptTrainDataset(Dataset):
         random.shuffle(self.de_type)
 
     def _init_clean_ids(self):
-        ref_file = self.args.data_file_dir + "noisy/denoise_airnet.txt"
+        ref_file = self._resolve_manifest("noisy", "denoise_airnet")
         temp_ids = []
         temp_ids+= [id_.strip() for id_ in open(ref_file)]
         clean_ids = []
@@ -54,29 +82,24 @@ class PromptTrainDataset(Dataset):
         clean_ids += [self.args.denoise_dir + id_ for id_ in name_list if id_.strip() in temp_ids]
 
         if 'denoise_15' in self.de_type:
-            self.s15_ids = [{"clean_id": x,"de_type":0} for x in clean_ids]
-            self.s15_ids = self.s15_ids * 3
-            random.shuffle(self.s15_ids)
+            self.s15_ids = self._build_fixed_size_ids(clean_ids, de_type=0, target_size=self.denoise_level_size)
             self.s15_counter = 0
         if 'denoise_25' in self.de_type:
-            self.s25_ids = [{"clean_id": x,"de_type":1} for x in clean_ids]
-            self.s25_ids = self.s25_ids * 3
-            random.shuffle(self.s25_ids)
+            self.s25_ids = self._build_fixed_size_ids(clean_ids, de_type=1, target_size=self.denoise_level_size)
             self.s25_counter = 0
         if 'denoise_50' in self.de_type:
-            self.s50_ids = [{"clean_id": x,"de_type":2} for x in clean_ids]
-            self.s50_ids = self.s50_ids * 3
-            random.shuffle(self.s50_ids)
+            self.s50_ids = self._build_fixed_size_ids(clean_ids, de_type=2, target_size=self.denoise_level_size)
             self.s50_counter = 0
 
         self.num_clean = len(clean_ids)
-        print("Total Denoise Ids : {}".format(self.num_clean))
+        print("Total Denoise Source Ids : {}".format(self.num_clean))
+        print("Target Denoise Size Per Level : {}".format(self.denoise_level_size))
 
     def _init_hazy_ids(self):
         temp_ids = []
-        hazy = self.args.data_file_dir + "hazy/hazy_outside.txt"
+        hazy = self._resolve_manifest("hazy", "hazy_outside")
         temp_ids+= [self.args.dehaze_dir + id_.strip() for id_ in open(hazy)]
-        self.hazy_ids = [{"clean_id" : x,"de_type":4} for x in temp_ids]
+        self.hazy_ids = self._build_fixed_size_ids(temp_ids, de_type=4, target_size=self.degradation_size)
 
         self.hazy_counter = 0
         
@@ -85,10 +108,9 @@ class PromptTrainDataset(Dataset):
 
     def _init_rs_ids(self):
         temp_ids = []
-        rs = self.args.data_file_dir + "rainy/rainTrain.txt"
+        rs = self._resolve_manifest("rainy", "rainTrain")
         temp_ids+= [self.args.derain_dir + id_.strip() for id_ in open(rs)]
-        self.rs_ids = [{"clean_id":x,"de_type":3} for x in temp_ids]
-        self.rs_ids = self.rs_ids * 120
+        self.rs_ids = self._build_fixed_size_ids(temp_ids, de_type=3, target_size=self.degradation_size)
 
         self.rl_counter = 0
         self.num_rl = len(self.rs_ids)
@@ -107,8 +129,17 @@ class PromptTrainDataset(Dataset):
         return patch_1, patch_2
 
     def _get_gt_name(self, rainy_name):
-        gt_name = rainy_name.split("rainy")[0] + 'gt/norain-' + rainy_name.split('rain-')[-1]
-        return gt_name
+        # Original PromptIR layout: .../rainy/rain-xxx.png -> .../gt/norain-xxx.png
+        if "rainy/" in rainy_name and "rain-" in rainy_name:
+            return rainy_name.split("rainy")[0] + 'gt/norain-' + rainy_name.split('rain-')[-1]
+
+        # rain13K layout: .../input/xxxx.jpg -> .../target/xxxx.jpg
+        if "/input/" in rainy_name:
+            return rainy_name.replace('/input/', '/target/')
+        if "input/" in rainy_name:
+            return rainy_name.replace('input/', 'target/')
+
+        raise ValueError(f"Unsupported derain path format: {rainy_name}")
 
     def _get_nonhazy_name(self, hazy_name):
         dir_name = hazy_name.split("synthetic")[0] + 'original/'
@@ -121,7 +152,9 @@ class PromptTrainDataset(Dataset):
         self.sample_ids = []
         if "denoise_15" in self.de_type:
             self.sample_ids += self.s15_ids
+        if "denoise_25" in self.de_type:
             self.sample_ids += self.s25_ids
+        if "denoise_50" in self.de_type:
             self.sample_ids += self.s50_ids
         if "derain" in self.de_type:
             self.sample_ids+= self.rs_ids

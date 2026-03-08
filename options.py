@@ -11,15 +11,21 @@ parser.add_argument('--lr', type=float, default=2e-4, help='learning rate of enc
 
 parser.add_argument('--de_type', nargs='+', default=['denoise_15', 'denoise_25', 'denoise_50', 'derain', 'dehaze'],
                     help='which type of degradations is training and testing for.')
+parser.add_argument('--data_split', type=str, default='train', choices=['train', 'val', 'test'],
+                    help='which manifest split to use for dataset loading.')
 
 parser.add_argument('--patch_size', type=int, default=128, help='patchsize of input.')
+parser.add_argument('--degradation_size', type=int, default=8192,
+                    help='target training sample size per degradation (denoise per level uses size/2).')
 parser.add_argument('--num_workers', type=int, default=16, help='number of workers.')
+parser.add_argument('--accumulate_grad_batches', type=int, default=1,
+                    help='gradient accumulation steps to reach larger effective batch size.')
 
 # path
 parser.add_argument('--data_file_dir', type=str, default='data_dir/',  help='where clean images of denoising saves.')
 parser.add_argument('--denoise_dir', type=str, default='data/Train/Denoise/',
                     help='where clean images of denoising saves.')
-parser.add_argument('--derain_dir', type=str, default='data/Train/Derain/',
+parser.add_argument('--derain_dir', type=str, default='/home/huhao/adv_ir/dataset/rain/rain13K/train/',
                     help='where training images of deraining saves.')
 parser.add_argument('--dehaze_dir', type=str, default='data/Train/Dehaze/',
                     help='where training images of dehazing saves.')

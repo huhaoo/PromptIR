@@ -161,6 +161,10 @@ cython_debug/
 
 *.ckpt
 *.zip
+*.zip.*
 *.png
+*.bmp
+*.jpg
+data/
 wandb/
 nohup.out
