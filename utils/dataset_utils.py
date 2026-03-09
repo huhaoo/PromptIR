@@ -23,7 +23,11 @@ class PromptTrainDataset(Dataset):
         self.de_type = self.args.de_type
         self.data_split = getattr(self.args, 'data_split', 'train')
         self.degradation_size = getattr(self.args, 'degradation_size', 8192)
-        self.denoise_level_size = max(1, self.degradation_size // 2)
+        if self.degradation_size is None or self.degradation_size <= 0:
+            self.degradation_size = None
+            self.denoise_level_size = None
+        else:
+            self.denoise_level_size = max(1, self.degradation_size // 2)
         print(self.de_type)
         print("Data split : {}".format(self.data_split))
 
@@ -41,9 +45,16 @@ class PromptTrainDataset(Dataset):
 
     def _build_fixed_size_ids(self, clean_ids, de_type, target_size):
         tagged_ids = [{"clean_id": x, "de_type": de_type} for x in clean_ids]
-        if target_size <= 0:
-            return []
         if len(tagged_ids) == 0:
+            return []
+
+        # For val/test, keep all source ids without synthetic repetition.
+        if target_size is None:
+            out_ids = tagged_ids.copy()
+            random.shuffle(out_ids)
+            return out_ids
+
+        if target_size <= 0:
             return []
 
         if len(tagged_ids) >= target_size:
@@ -93,7 +104,10 @@ class PromptTrainDataset(Dataset):
 
         self.num_clean = len(clean_ids)
         print("Total Denoise Source Ids : {}".format(self.num_clean))
-        print("Target Denoise Size Per Level : {}".format(self.denoise_level_size))
+        if self.denoise_level_size is None:
+            print("Target Denoise Size Per Level : full split")
+        else:
+            print("Target Denoise Size Per Level : {}".format(self.denoise_level_size))
 
     def _init_hazy_ids(self):
         temp_ids = []
@@ -127,6 +141,24 @@ class PromptTrainDataset(Dataset):
         patch_2 = img_2[ind_H:ind_H + self.args.patch_size, ind_W:ind_W + self.args.patch_size]
 
         return patch_1, patch_2
+
+    def _center_crop_patch(self, img_1, img_2):
+        H = img_1.shape[0]
+        W = img_1.shape[1]
+        ind_H = max(0, (H - self.args.patch_size) // 2)
+        ind_W = max(0, (W - self.args.patch_size) // 2)
+
+        patch_1 = img_1[ind_H:ind_H + self.args.patch_size, ind_W:ind_W + self.args.patch_size]
+        patch_2 = img_2[ind_H:ind_H + self.args.patch_size, ind_W:ind_W + self.args.patch_size]
+
+        return patch_1, patch_2
+
+    def _center_crop_single(self, img):
+        H = img.shape[0]
+        W = img.shape[1]
+        ind_H = max(0, (H - self.args.patch_size) // 2)
+        ind_W = max(0, (W - self.args.patch_size) // 2)
+        return img[ind_H:ind_H + self.args.patch_size, ind_W:ind_W + self.args.patch_size]
 
     def _get_gt_name(self, rainy_name):
         # Original PromptIR layout: .../rainy/rain-xxx.png -> .../gt/norain-xxx.png
@@ -176,12 +208,16 @@ class PromptTrainDataset(Dataset):
                 clean_id = sample["clean_id"]
 
             clean_img = crop_img(np.array(Image.open(clean_id).convert('RGB')), base=16)
-            clean_patch = self.crop_transform(clean_img)
-            clean_patch= np.array(clean_patch)
+            if self.data_split == "train":
+                clean_patch = self.crop_transform(clean_img)
+                clean_patch = np.array(clean_patch)
+            else:
+                clean_patch = self._center_crop_single(clean_img)
 
             clean_name = clean_id.split("/")[-1].split('.')[0]
 
-            clean_patch = random_augmentation(clean_patch)[0]
+            if self.data_split == "train":
+                clean_patch = random_augmentation(clean_patch)[0]
 
             degrad_patch = self.D.single_degrade(clean_patch, de_id)
         else:
@@ -196,7 +232,10 @@ class PromptTrainDataset(Dataset):
                 clean_name = self._get_nonhazy_name(sample["clean_id"])
                 clean_img = crop_img(np.array(Image.open(clean_name).convert('RGB')), base=16)
 
-            degrad_patch, clean_patch = random_augmentation(*self._crop_patch(degrad_img, clean_img))
+            if self.data_split == "train":
+                degrad_patch, clean_patch = random_augmentation(*self._crop_patch(degrad_img, clean_img))
+            else:
+                degrad_patch, clean_patch = self._center_crop_patch(degrad_img, clean_img)
 
         clean_patch = self.toTensor(clean_patch)
         degrad_patch = self.toTensor(degrad_patch)
