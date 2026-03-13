@@ -7,6 +7,6 @@ conda run -n "promptir" --no-capture-output \
   --lr "2e-4" \
   --patch_size "128" \
   --num_workers "8" \
-  --num_gpus "3" \
+  --num_gpus "2" \
   --ckpt_dir "train_ckpt" \
 #   --degradation_size 128

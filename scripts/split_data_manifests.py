@@ -61,7 +61,7 @@ def rain_key(item: str):
 
 
 def haze_key(item: str):
-    # synthetic/part*/0025_0.8_0.04.jpg -> group by clean source id 0025
+    # synthetic/OTS/0025_0.8_0.04.jpg -> group by clean source id 0025
     name = Path(item).name
     return name.split("_")[0]
 

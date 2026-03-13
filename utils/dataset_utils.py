@@ -74,6 +74,30 @@ class PromptTrainDataset(Dataset):
             return split_path
         return default_path
 
+    def _normalize_hazy_rel_path(self, rel_path):
+        rel_path = rel_path.strip().replace('\\', '/')
+        if rel_path.startswith('synthetic/part1/'):
+            return rel_path.replace('synthetic/part1/', 'synthetic/OTS/', 1)
+        return rel_path
+
+    def _resolve_hazy_path(self, rel_path):
+        rel_path = rel_path.strip().replace('\\', '/')
+        normalized_rel = self._normalize_hazy_rel_path(rel_path)
+
+        candidate_rels = [normalized_rel]
+        if normalized_rel.startswith('synthetic/OTS/'):
+            candidate_rels.append(normalized_rel.replace('synthetic/OTS/', 'synthetic/', 1))
+        if rel_path != normalized_rel:
+            candidate_rels.append(rel_path)
+
+        for candidate_rel in candidate_rels:
+            candidate_path = os.path.join(self.args.dehaze_dir, candidate_rel)
+            if os.path.exists(candidate_path):
+                return candidate_path
+
+        # Keep deterministic behavior even when files are not present yet.
+        return os.path.join(self.args.dehaze_dir, normalized_rel)
+
     def _init_ids(self):
         if 'denoise_15' in self.de_type or 'denoise_25' in self.de_type or 'denoise_50' in self.de_type:
             self._init_clean_ids()
@@ -112,7 +136,7 @@ class PromptTrainDataset(Dataset):
     def _init_hazy_ids(self):
         temp_ids = []
         hazy = self._resolve_manifest("hazy", "hazy_outside")
-        temp_ids+= [self.args.dehaze_dir + id_.strip() for id_ in open(hazy)]
+        temp_ids += [self._resolve_hazy_path(id_.strip()) for id_ in open(hazy)]
         self.hazy_ids = self._build_fixed_size_ids(temp_ids, de_type=4, target_size=self.degradation_size)
 
         self.hazy_counter = 0
