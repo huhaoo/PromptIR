@@ -1,6 +1,7 @@
 import subprocess
 from tqdm import tqdm
 import copy
+import glob
 
 import torch
 import torch.nn as nn
@@ -18,6 +19,22 @@ import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger,TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from utils.pytorch_ssim import ssim
+
+
+def resolve_resume_checkpoint(resume_ckpt, ckpt_dir, auto_resume):
+    if resume_ckpt:
+        if not os.path.isfile(resume_ckpt):
+            raise FileNotFoundError(f"resume checkpoint not found: {resume_ckpt}")
+        return resume_ckpt
+
+    if auto_resume:
+        ckpt_candidates = glob.glob(os.path.join(ckpt_dir, "*.ckpt"))
+        if not ckpt_candidates:
+            return None
+        # Pick the most recently modified checkpoint for recovery.
+        return max(ckpt_candidates, key=os.path.getmtime)
+
+    return None
 
 
 class PromptIRModel(pl.LightningModule):
@@ -121,7 +138,16 @@ def main():
                               num_sanity_val_steps=0)
 
     trainer = pl.Trainer(**trainer_kwargs)
-    trainer.fit(model=model, train_dataloaders=trainloader, val_dataloaders=valloader)
+    resume_path = resolve_resume_checkpoint(opt.resume_ckpt, opt.ckpt_dir, opt.auto_resume)
+    if resume_path is not None:
+        print(f"Resuming training from checkpoint: {resume_path}")
+
+    trainer.fit(
+        model=model,
+        train_dataloaders=trainloader,
+        val_dataloaders=valloader,
+        ckpt_path=resume_path,
+    )
 
 
 if __name__ == '__main__':
