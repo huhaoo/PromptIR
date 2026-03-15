@@ -23,11 +23,11 @@ parser.add_argument('--accumulate_grad_batches', type=int, default=1,
 
 # path
 parser.add_argument('--data_file_dir', type=str, default='data_dir/',  help='where clean images of denoising saves.')
-parser.add_argument('--denoise_dir', type=str, default='data/Train/Denoise/',
+parser.add_argument('--denoise_dir', type=str, default='/home/huhao/adv_ir/dataset/noise/mix/',
                     help='where clean images of denoising saves.')
-parser.add_argument('--derain_dir', type=str, default='/home/huhao/adv_ir/dataset/rain/rain13K/train/',
+parser.add_argument('--derain_dir', type=str, default='/home/huhao/adv_ir/dataset/',
                     help='where training images of deraining saves.')
-parser.add_argument('--dehaze_dir', type=str, default='data/Train/Dehaze/',
+parser.add_argument('--dehaze_dir', type=str, default='/home/huhao/adv_ir/dataset/',
                     help='where training images of dehazing saves.')
 parser.add_argument('--output_path', type=str, default="output/", help='output save path')
 parser.add_argument('--ckpt_path', type=str, default="ckpt/Denoise/", help='checkpoint save path')

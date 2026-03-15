@@ -16,6 +16,8 @@ class PromptTrainDataset(Dataset):
     def __init__(self, args):
         super(PromptTrainDataset, self).__init__()
         self.args = args
+        self.repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        self.legacy_train_root = os.path.join(self.repo_root, 'data', 'Train')
         self.rs_ids = []
         self.hazy_ids = []
         self.D = Degradation(args)
@@ -95,6 +97,18 @@ class PromptTrainDataset(Dataset):
             if os.path.exists(candidate_path):
                 return candidate_path
 
+        # Fallback to legacy PromptIR layout when dataset/haze is not extracted yet.
+        legacy_candidates = []
+        for candidate_rel in candidate_rels:
+            mapped_rel = candidate_rel
+            if candidate_rel.startswith('haze/reside_ots/haze/'):
+                mapped_rel = candidate_rel.replace('haze/reside_ots/haze/', 'synthetic/OTS/', 1)
+            legacy_candidates.append(os.path.join(self.legacy_train_root, 'Dehaze', mapped_rel))
+
+        for candidate_path in legacy_candidates:
+            if os.path.exists(candidate_path):
+                return candidate_path
+
         # Keep deterministic behavior even when files are not present yet.
         return os.path.join(self.args.dehaze_dir, normalized_rel)
 
@@ -112,9 +126,23 @@ class PromptTrainDataset(Dataset):
         ref_file = self._resolve_manifest("noisy", "denoise_airnet")
         temp_ids = []
         temp_ids+= [id_.strip() for id_ in open(ref_file)]
+        temp_id_set = set(temp_ids)
+        temp_id_basename_set = {os.path.basename(x) for x in temp_ids}
+
+        denoise_dir = self.args.denoise_dir
+        if not os.path.isdir(denoise_dir):
+            fallback_denoise_dir = os.path.join(self.legacy_train_root, 'Denoise')
+            if os.path.isdir(fallback_denoise_dir):
+                denoise_dir = fallback_denoise_dir + '/'
+                print("[Info] denoise_dir not found, fallback to {}".format(denoise_dir))
+
         clean_ids = []
-        name_list = os.listdir(self.args.denoise_dir)
-        clean_ids += [self.args.denoise_dir + id_ for id_ in name_list if id_.strip() in temp_ids]
+        name_list = os.listdir(denoise_dir)
+        clean_ids += [
+            denoise_dir + id_
+            for id_ in name_list
+            if id_.strip() in temp_id_set or id_.strip() in temp_id_basename_set
+        ]
 
         if 'denoise_15' in self.de_type:
             self.s15_ids = self._build_fixed_size_ids(clean_ids, de_type=0, target_size=self.denoise_level_size)
@@ -198,6 +226,19 @@ class PromptTrainDataset(Dataset):
         raise ValueError(f"Unsupported derain path format: {rainy_name}")
 
     def _get_nonhazy_name(self, hazy_name):
+        # New dataset layout: .../haze/reside_ots/haze/xxxx_a_b.jpg -> .../haze/reside_ots/clear/xxxx.jpg
+        if '/haze/reside_ots/haze/' in hazy_name:
+            clear_name = hazy_name.replace('/haze/reside_ots/haze/', '/haze/reside_ots/clear/')
+            base_name = os.path.basename(clear_name)
+            stem, ext = os.path.splitext(base_name)
+            clean_stem = stem.split('_')[0]
+            dataset_clear = os.path.join(os.path.dirname(clear_name), clean_stem + ext)
+            if os.path.exists(dataset_clear):
+                return dataset_clear
+
+            # Fallback for legacy dehaze root.
+            return os.path.join(self.legacy_train_root, 'Dehaze', 'original', clean_stem + ext)
+
         dir_name = hazy_name.split("synthetic")[0] + 'original/'
         name = hazy_name.split('/')[-1].split('_')[0]
         suffix = '.' + hazy_name.split('.')[-1]
