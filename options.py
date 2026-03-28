@@ -38,6 +38,40 @@ parser.add_argument("--resume_ckpt", type=str, default="",
 parser.add_argument("--auto_resume", action="store_true",
                     help="resume from latest checkpoint under ckpt_dir when resume_ckpt is not provided")
 parser.add_argument("--num_gpus",type=int,default= 4,help = "Number of GPUs to use for training")
+parser.add_argument("--p_target_m_target", type=float, default=0.1,
+                    help="probability for M(target)-target replacement branch in train_expairs")
+parser.add_argument("--p_target_mm_input", type=float, default=0.1,
+                    help="probability for M(M(input))-target replacement branch in train_expairs")
+
+# adversarial mix training
+parser.add_argument("--adv_enable", action="store_true",
+                    help="enable mixed adversarial sample training")
+parser.add_argument("--adv_ratio", type=float, default=0.5,
+                    help="adversarial sample ratio relative to base training set size")
+parser.add_argument("--adv_resample_epochs", type=int, default=8,
+                    help="resample adversarial sample pool every N epochs")
+parser.add_argument("--adv_samples_per_resample", type=int, default=0,
+                    help="override adversarial sample count per resample; 0 means auto by adv_ratio")
+parser.add_argument("--adv_steps1", type=int, default=2,
+                    help="PromptIR-call steps for adversarial generation")
+parser.add_argument("--adv_steps2", type=int, default=2,
+                    help="inner optimization steps per fixed PromptIR gradient")
+parser.add_argument("--adv_step_size", type=float, default=3e-2,
+                    help="optimizer step size for adversarial degradation parameters")
+parser.add_argument("--adv_lambda_reg", type=float, default=0.05,
+                    help="regularization weight for adversarial degradation generation")
+parser.add_argument("--adv_rain_topk", type=int, default=4,
+                    help="top-k branches used in rain degradation while generating adversarial samples")
+parser.add_argument("--adv_max_side", type=int, default=256,
+                    help="max side resize for adversarial generation to control cost")
+parser.add_argument("--adv_promptir_ckpt", type=str,
+                    default="/home/huhao/adv_ir/PromptIR/train_ckpt_8192/epoch=31-step=57344.ckpt",
+                    help="frozen PromptIR checkpoint path used for adversarial sample generation")
+parser.add_argument("--adv_cache_root", type=str,
+                    default="/home/huhao/adv_ir/PromptIR/data/Train/adv_pairs",
+                    help="root directory for generated adversarial input/target pair folders")
+parser.add_argument("--adv_attack_device", type=str, default="cuda", choices=["cpu", "cuda"],
+                    help="device used to generate adversarial samples")
 
 options = parser.parse_args()
 
