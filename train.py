@@ -2,8 +2,6 @@ import subprocess
 from tqdm import tqdm
 import copy
 import glob
-import sys
-from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -20,15 +18,7 @@ from options import options as opt
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger,TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.strategies import StrategyRegistry
 from utils.pytorch_ssim import ssim
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOT = PROJECT_ROOT / "source"
-if str(SOURCE_ROOT) not in sys.path:
-    sys.path.insert(0, str(SOURCE_ROOT))
-
-from promptir_adv_training import promptir_adv_mix_dataset
 
 
 def resolve_resume_checkpoint(resume_ckpt, ckpt_dir, auto_resume):
@@ -47,26 +37,11 @@ def resolve_resume_checkpoint(resume_ckpt, ckpt_dir, auto_resume):
     return None
 
 
-def select_multi_gpu_strategy():
-    available = set(StrategyRegistry.available_strategies())
-    candidates = [
-        "ddp_find_unused_parameters_true",
-        "ddp",
-        "ddp_find_unused_parameters_false",
-        "ddp_spawn",
-    ]
-    for name in candidates:
-        if name in available:
-            return name
-    return None
-
-
 class PromptIRModel(pl.LightningModule):
-    def __init__(self, train_dataset=None):
+    def __init__(self):
         super().__init__()
         self.net = PromptIR(decoder=True)
         self.loss_fn  = nn.L1Loss()
-        self.train_dataset = train_dataset
     
     def forward(self,x):
         return self.net(x)
@@ -105,34 +80,8 @@ class PromptIRModel(pl.LightningModule):
                 f"psnr={metrics['val_psnr'].item():.4f} "
                 f"ssim={metrics['val_ssim'].item():.4f}"
             )
-
-    def on_train_epoch_start(self):
-        if self.train_dataset is None:
-            return
-
-        model_was_training = self.net.training
-        self.net.eval()
-
-        force = self.current_epoch == 0
-        try:
-            if hasattr(self.train_dataset, "resample_main_process_then_sync"):
-                self.train_dataset.resample_main_process_then_sync(
-                    epoch=int(self.current_epoch),
-                    force=force,
-                    promptir_model_override=self.net,
-                )
-                return
-            if hasattr(self.train_dataset, "resample_adversarial"):
-                self.train_dataset.resample_adversarial(
-                    epoch=int(self.current_epoch),
-                    force=force,
-                    promptir_model_override=self.net,
-                )
-        finally:
-            if model_was_training:
-                self.net.train()
     
-    def lr_scheduler_step(self, scheduler, optimizer_idx, metric=None):
+    def lr_scheduler_step(self, scheduler, optimizer_idx, metric):
         scheduler.step(self.current_epoch)
     
     def configure_optimizers(self):
@@ -158,11 +107,7 @@ def main():
     else:
         logger = TensorBoardLogger(save_dir = "logs/")
 
-    trainset_base = PromptTrainDataset(opt)
-    if opt.adv_enable:
-        trainset = promptir_adv_mix_dataset(trainset_base, opt)
-    else:
-        trainset = trainset_base
+    trainset = PromptTrainDataset(opt)
     val_opt = copy.deepcopy(opt)
     val_opt.data_split = "val"
     # Keep full val split without synthetic repeat/downsample.
@@ -174,7 +119,7 @@ def main():
     valloader = DataLoader(valset, batch_size=opt.batch_size, pin_memory=True, shuffle=False,
                            drop_last=False, num_workers=opt.num_workers)
     
-    model = PromptIRModel(train_dataset=trainset)
+    model = PromptIRModel()
 
     if torch.cuda.is_available() and opt.num_gpus > 0:
         devices = min(opt.num_gpus, torch.cuda.device_count())
@@ -184,10 +129,7 @@ def main():
                               check_val_every_n_epoch=4,
                               num_sanity_val_steps=0)
         if devices > 1:
-            strategy_name = select_multi_gpu_strategy()
-            if strategy_name is not None:
-                print(f"Using multi-GPU strategy: {strategy_name}")
-                trainer_kwargs["strategy"] = strategy_name
+            trainer_kwargs["strategy"] = "ddp"
     else:
         trainer_kwargs = dict(max_epochs=opt.epochs, accelerator="cpu", devices=1,
                               logger=logger, callbacks=[checkpoint_callback],
