@@ -52,6 +52,8 @@ parser.add_argument("--adv_resample_epochs", type=int, default=8,
                     help="resample adversarial sample pool every N epochs")
 parser.add_argument("--adv_samples_per_resample", type=int, default=0,
                     help="override adversarial sample count per resample; 0 means auto by adv_ratio")
+parser.add_argument("--adv_aug_k", type=int, default=1,
+                    help="for haze-only adversarial generation: build n/k adversarial samples then use simple augmentations to expand to n")
 parser.add_argument("--adv_steps1", type=int, default=2,
                     help="PromptIR-call steps for adversarial generation")
 parser.add_argument("--adv_steps2", type=int, default=2,
@@ -62,11 +64,10 @@ parser.add_argument("--adv_lambda_reg", type=float, default=0.05,
                     help="regularization weight for adversarial degradation generation")
 parser.add_argument("--adv_rain_topk", type=int, default=4,
                     help="top-k branches used in rain degradation while generating adversarial samples")
-parser.add_argument("--adv_max_side", type=int, default=256,
-                    help="max side resize for adversarial generation to control cost")
-parser.add_argument("--adv_promptir_ckpt", type=str,
-                    default="/home/huhao/adv_ir/PromptIR/train_ckpt_8192/epoch=31-step=57344.ckpt",
-                    help="frozen PromptIR checkpoint path used for adversarial sample generation")
+parser.add_argument("--adv_promptir_patch_size", type=int, default=128,
+                    help="patch size used for PromptIR tiled forward/gradient during adversarial generation")
+parser.add_argument("--adv_promptir_patch_overlap", type=int, default=32,
+                    help="patch overlap used for PromptIR tiled forward/gradient during adversarial generation")
 parser.add_argument("--adv_cache_root", type=str,
                     default="/home/huhao/adv_ir/PromptIR/data/Train/adv_pairs",
                     help="root directory for generated adversarial input/target pair folders")
