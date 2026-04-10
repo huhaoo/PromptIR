@@ -76,6 +76,199 @@ class LayerNorm(nn.Module):
         return to_4d(self.body(to_3d(x)), h, w)
 
 
+class LayerNormFunction2d(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, weight, bias, eps):
+        ctx.eps = eps
+        _, c, _, _ = x.size()
+        mu = x.mean(1, keepdim=True)
+        var = (x - mu).pow(2).mean(1, keepdim=True)
+        y = (x - mu) / (var + eps).sqrt()
+        ctx.save_for_backward(y, var, weight)
+        y = weight.view(1, c, 1, 1) * y + bias.view(1, c, 1, 1)
+        return y
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        eps = ctx.eps
+        _, c, _, _ = grad_output.size()
+        y, var, weight = ctx.saved_variables
+        g = grad_output * weight.view(1, c, 1, 1)
+        mean_g = g.mean(dim=1, keepdim=True)
+        mean_gy = (g * y).mean(dim=1, keepdim=True)
+        gx = 1.0 / torch.sqrt(var + eps) * (g - y * mean_gy - mean_g)
+        return (
+            gx,
+            (grad_output * y).sum(dim=3).sum(dim=2).sum(dim=0),
+            grad_output.sum(dim=3).sum(dim=2).sum(dim=0),
+            None,
+        )
+
+
+class LayerNorm2d(nn.Module):
+    def __init__(self, channels, eps=1e-6):
+        super().__init__()
+        self.register_parameter("weight", nn.Parameter(torch.ones(channels)))
+        self.register_parameter("bias", nn.Parameter(torch.zeros(channels)))
+        self.eps = eps
+
+    def forward(self, x):
+        return LayerNormFunction2d.apply(x, self.weight, self.bias, self.eps)
+
+
+class SimpleGate(nn.Module):
+    def forward(self, x):
+        x1, x2 = x.chunk(2, dim=1)
+        return x1 * x2
+
+
+class NAFBlock(nn.Module):
+    def __init__(self, c, dw_expand=2, ffn_expand=2, drop_out_rate=0.0, bias=True):
+        super().__init__()
+        dw_channel = c * int(dw_expand)
+        self.conv1 = nn.Conv2d(c, dw_channel, kernel_size=1, stride=1, padding=0, groups=1, bias=bias)
+        self.conv2 = nn.Conv2d(
+            dw_channel,
+            dw_channel,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            groups=dw_channel,
+            bias=bias,
+        )
+        self.conv3 = nn.Conv2d(dw_channel // 2, c, kernel_size=1, stride=1, padding=0, groups=1, bias=bias)
+
+        self.sca = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(dw_channel // 2, dw_channel // 2, kernel_size=1, stride=1, padding=0, groups=1, bias=bias),
+        )
+        self.sg = SimpleGate()
+
+        ffn_channel = int(ffn_expand) * c
+        self.conv4 = nn.Conv2d(c, ffn_channel, kernel_size=1, stride=1, padding=0, groups=1, bias=bias)
+        self.conv5 = nn.Conv2d(ffn_channel // 2, c, kernel_size=1, stride=1, padding=0, groups=1, bias=bias)
+
+        self.norm1 = LayerNorm2d(c)
+        self.norm2 = LayerNorm2d(c)
+
+        self.dropout1 = nn.Dropout(drop_out_rate) if drop_out_rate > 0.0 else nn.Identity()
+        self.dropout2 = nn.Dropout(drop_out_rate) if drop_out_rate > 0.0 else nn.Identity()
+
+        self.beta = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
+        self.gamma = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
+
+    def forward(self, inp):
+        x = self.norm1(inp)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.sg(x)
+        x = x * self.sca(x)
+        x = self.conv3(x)
+        x = self.dropout1(x)
+        y = inp + x * self.beta
+
+        x = self.conv4(self.norm2(y))
+        x = self.sg(x)
+        x = self.conv5(x)
+        x = self.dropout2(x)
+        return y + x * self.gamma
+
+
+class PromptIRNAF(nn.Module):
+    def __init__(
+        self,
+        inp_channels=3,
+        out_channels=3,
+        width=32,
+        middle_blk_num=1,
+        enc_blk_nums=(1, 1, 1, 28),
+        dec_blk_nums=(1, 1, 1, 1),
+        dw_expand=2,
+        ffn_expand=2,
+        drop_out_rate=0.0,
+        bias=True,
+    ):
+        super().__init__()
+        self.inp_channels = int(inp_channels)
+        self.out_channels = int(out_channels)
+        self.width = int(width)
+        self.intro = nn.Conv2d(self.inp_channels, self.width, kernel_size=3, padding=1, stride=1, groups=1, bias=bias)
+        self.ending = nn.Conv2d(self.width, self.out_channels, kernel_size=3, padding=1, stride=1, groups=1, bias=bias)
+
+        self.encoders = nn.ModuleList()
+        self.decoders = nn.ModuleList()
+        self.ups = nn.ModuleList()
+        self.downs = nn.ModuleList()
+
+        chan = self.width
+        for num in list(enc_blk_nums):
+            self.encoders.append(
+                nn.Sequential(
+                    *[
+                        NAFBlock(chan, dw_expand=dw_expand, ffn_expand=ffn_expand, drop_out_rate=drop_out_rate, bias=bias)
+                        for _ in range(int(num))
+                    ]
+                )
+            )
+            self.downs.append(nn.Conv2d(chan, 2 * chan, 2, 2))
+            chan = chan * 2
+
+        self.middle_blks = nn.Sequential(
+            *[
+                NAFBlock(chan, dw_expand=dw_expand, ffn_expand=ffn_expand, drop_out_rate=drop_out_rate, bias=bias)
+                for _ in range(int(middle_blk_num))
+            ]
+        )
+
+        for num in list(dec_blk_nums):
+            self.ups.append(
+                nn.Sequential(
+                    nn.Conv2d(chan, chan * 2, 1, bias=False),
+                    nn.PixelShuffle(2),
+                )
+            )
+            chan = chan // 2
+            self.decoders.append(
+                nn.Sequential(
+                    *[
+                        NAFBlock(chan, dw_expand=dw_expand, ffn_expand=ffn_expand, drop_out_rate=drop_out_rate, bias=bias)
+                        for _ in range(int(num))
+                    ]
+                )
+            )
+
+        self.padder_size = 2 ** len(self.encoders)
+
+    def check_image_size(self, x):
+        _, _, h, w = x.size()
+        mod_pad_h = (self.padder_size - h % self.padder_size) % self.padder_size
+        mod_pad_w = (self.padder_size - w % self.padder_size) % self.padder_size
+        return F.pad(x, (0, mod_pad_w, 0, mod_pad_h))
+
+    def forward(self, inp):
+        _, _, h, w = inp.shape
+        inp_padded = self.check_image_size(inp)
+
+        x = self.intro(inp_padded)
+        encs = []
+        for encoder, down in zip(self.encoders, self.downs):
+            x = encoder(x)
+            encs.append(x)
+            x = down(x)
+
+        x = self.middle_blks(x)
+
+        for decoder, up, enc_skip in zip(self.decoders, self.ups, encs[::-1]):
+            x = up(x)
+            x = x + enc_skip
+            x = decoder(x)
+
+        x = self.ending(x)
+        if self.inp_channels == self.out_channels:
+            x = x + inp_padded
+        return x[:, :, :h, :w]
+
+
 
 ##########################################################################
 ## Gated-Dconv Feed-Forward Network (GDFN)
@@ -241,7 +434,7 @@ class PromptGenBlock(nn.Module):
 ##########################################################################
 ##---------- PromptIR -----------------------
 
-class PromptIR(nn.Module):
+class PromptIRTransformer(nn.Module):
     def __init__(self, 
         inp_channels=3, 
         out_channels=3, 
@@ -255,7 +448,7 @@ class PromptIR(nn.Module):
         decoder = False,
     ):
 
-        super(PromptIR, self).__init__()
+        super(PromptIRTransformer, self).__init__()
 
         self.patch_embed = OverlapPatchEmbed(inp_channels, dim)
         
@@ -378,3 +571,58 @@ class PromptIR(nn.Module):
 
 
         return out_dec_level1
+
+
+PromptIRLegacy = PromptIRTransformer
+
+
+class PromptIR(PromptIRTransformer):
+    pass
+
+
+def build_promptir_model(model_arch="promptir", decoder=True, **kwargs):
+    arch = str(model_arch).strip().lower()
+    if arch in {"nafnet", "naf", "promptir_naf"}:
+        return PromptIRNAF(
+            inp_channels=int(kwargs.get("inp_channels", 3)),
+            out_channels=int(kwargs.get("out_channels", 3)),
+            width=int(kwargs.get("naf_width", kwargs.get("width", 32))),
+            middle_blk_num=int(kwargs.get("naf_middle_blk_num", kwargs.get("middle_blk_num", 1))),
+            enc_blk_nums=list(kwargs.get("naf_enc_blk_nums", kwargs.get("enc_blk_nums", [1, 1, 1, 28]))),
+            dec_blk_nums=list(kwargs.get("naf_dec_blk_nums", kwargs.get("dec_blk_nums", [1, 1, 1, 1]))),
+            dw_expand=int(kwargs.get("naf_dw_expand", kwargs.get("dw_expand", 2))),
+            ffn_expand=int(kwargs.get("naf_ffn_expand", kwargs.get("ffn_expand", 2))),
+            drop_out_rate=float(kwargs.get("naf_dropout", kwargs.get("drop_out_rate", 0.0))),
+            bias=bool(kwargs.get("bias", True)),
+        )
+    if arch in {"promptir", "legacy", "transformer"}:
+        decoder_flag = bool(kwargs.get("decoder", decoder))
+        return PromptIRTransformer(
+            inp_channels=int(kwargs.get("inp_channels", 3)),
+            out_channels=int(kwargs.get("out_channels", 3)),
+            dim=int(kwargs.get("promptir_dim", kwargs.get("dim", 48))),
+            num_blocks=list(kwargs.get("promptir_num_blocks", kwargs.get("num_blocks", [4, 6, 6, 8]))),
+            num_refinement_blocks=int(kwargs.get("promptir_num_refinement_blocks", kwargs.get("num_refinement_blocks", 4))),
+            heads=list(kwargs.get("promptir_heads", kwargs.get("heads", [1, 2, 4, 8]))),
+            ffn_expansion_factor=float(kwargs.get("promptir_ffn_expansion_factor", kwargs.get("ffn_expansion_factor", 2.66))),
+            bias=bool(kwargs.get("bias", False)),
+            LayerNorm_type=str(kwargs.get("promptir_layernorm_type", kwargs.get("LayerNorm_type", "WithBias"))),
+            decoder=decoder_flag,
+        )
+    raise ValueError(f"unsupported model_arch={model_arch!r}; expected one of ['nafnet', 'promptir']")
+
+
+def build_promptir_model_from_options(opt, decoder=True):
+    return build_promptir_model(
+        model_arch=getattr(opt, "model_arch", "promptir"),
+        decoder=decoder,
+        inp_channels=getattr(opt, "inp_channels", 3),
+        out_channels=getattr(opt, "out_channels", 3),
+        naf_width=getattr(opt, "naf_width", 32),
+        naf_middle_blk_num=getattr(opt, "naf_middle_blk_num", 1),
+        naf_enc_blk_nums=getattr(opt, "naf_enc_blk_nums", [1, 1, 1, 28]),
+        naf_dec_blk_nums=getattr(opt, "naf_dec_blk_nums", [1, 1, 1, 1]),
+        naf_dw_expand=getattr(opt, "naf_dw_expand", 2),
+        naf_ffn_expand=getattr(opt, "naf_ffn_expand", 2),
+        naf_dropout=getattr(opt, "naf_dropout", 0.0),
+    )

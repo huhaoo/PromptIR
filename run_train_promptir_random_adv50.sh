@@ -14,7 +14,7 @@ conda run -n "promptir" --no-capture-output \
   --patch_size "128" \
   --num_workers "8" \
   --num_gpus "3" \
-  --ckpt_dir "train_ckpt_random1024_adv_haze" \
+  --ckpt_dir "/home/huhao/adv_ir/exp/train_ckpt_random1024_adv_haze" \
   --adv_ratio "0.5" \
   --adv_cache_root "/home/huhao/adv_ir/dataset_ours/random_adv_haze" \
   --degradation_size 16384 \

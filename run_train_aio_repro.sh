@@ -9,5 +9,5 @@ conda run -n "promptir" --no-capture-output \
   --patch_size "128" \
   --num_workers "8" \
   --num_gpus "2" \
-  --ckpt_dir "train_ckpt" \
+  --ckpt_dir "/home/huhao/adv_ir/exp/train_ckpt" \
   --auto_resume

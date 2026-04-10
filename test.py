@@ -16,7 +16,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from net.model import PromptIR
+from net.model import build_promptir_model
 from utils.dataset_utils import PromptTrainDataset
 from utils.image_io import save_image_tensor
 from utils.pytorch_ssim import ssim as pytorch_ssim
@@ -113,6 +113,14 @@ def build_parser():
                         help="optional wandb run name")
     parser.add_argument("--disable_wandb", action="store_true",
                         help="disable wandb logging")
+    parser.add_argument("--model_arch", type=str, default="promptir", choices=["nafnet", "promptir"])
+    parser.add_argument("--naf_width", type=int, default=32)
+    parser.add_argument("--naf_middle_blk_num", type=int, default=1)
+    parser.add_argument("--naf_enc_blk_nums", type=int, nargs="+", default=[1, 1, 1, 28])
+    parser.add_argument("--naf_dec_blk_nums", type=int, nargs="+", default=[1, 1, 1, 1])
+    parser.add_argument("--naf_dw_expand", type=int, default=2)
+    parser.add_argument("--naf_ffn_expand", type=int, default=2)
+    parser.add_argument("--naf_dropout", type=float, default=0.0)
     return parser
 
 
@@ -122,7 +130,7 @@ def resolve_ckpt_path(ckpt_name):
     return os.path.join("ckpt", ckpt_name)
 
 
-def load_promptir_model(checkpoint_path, device):
+def load_promptir_model(checkpoint_path, device, testopt):
     try:
         checkpoint_obj = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
     except (TypeError, ValueError, RuntimeError, pickle.UnpicklingError):
@@ -140,12 +148,24 @@ def load_promptir_model(checkpoint_path, device):
     if len(promptir_state) == 0:
         raise ValueError("no 'net.' prefixed keys found in checkpoint state_dict")
 
-    model = PromptIR(decoder=True)
+    model = build_promptir_model(
+        model_arch=testopt.model_arch,
+        decoder=True,
+        inp_channels=3,
+        out_channels=3,
+        naf_width=int(testopt.naf_width),
+        naf_middle_blk_num=int(testopt.naf_middle_blk_num),
+        naf_enc_blk_nums=list(testopt.naf_enc_blk_nums),
+        naf_dec_blk_nums=list(testopt.naf_dec_blk_nums),
+        naf_dw_expand=int(testopt.naf_dw_expand),
+        naf_ffn_expand=int(testopt.naf_ffn_expand),
+        naf_dropout=float(testopt.naf_dropout),
+    )
     missing_keys, unexpected_keys = model.load_state_dict(promptir_state, strict=False)
     if len(unexpected_keys) > 0:
-        raise RuntimeError(f"unexpected PromptIR keys while loading checkpoint: {unexpected_keys[:10]}")
+        raise RuntimeError(f"unexpected model keys while loading checkpoint: {unexpected_keys[:10]}")
     if len(missing_keys) > 0:
-        raise RuntimeError(f"missing PromptIR keys while loading checkpoint: {missing_keys[:10]}")
+        raise RuntimeError(f"missing model keys while loading checkpoint: {missing_keys[:10]}")
 
     model = model.to(device)
     model.eval()
@@ -368,7 +388,7 @@ def evaluate(testopt):
         num_workers=testopt.num_workers,
     )
 
-    model = load_promptir_model(ckpt_path, device=device)
+    model = load_promptir_model(ckpt_path, device=device, testopt=testopt)
 
     output_root = Path(testopt.output_path)
     output_root.mkdir(parents=True, exist_ok=True)

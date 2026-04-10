@@ -11,5 +11,5 @@ conda run -n "promptir" --no-capture-output \
   --num_gpus "2" \
   --p_target_m_target "0" \
   --p_target_mm_input "0.2" \
-  --ckpt_dir "train_ckpt" \
+  --ckpt_dir "/home/huhao/adv_ir/exp/train_ckpt" \
   --auto_resume

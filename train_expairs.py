@@ -20,7 +20,7 @@ PROMPTIR_ROOT = PROJECT_ROOT / "PromptIR"
 if str(PROMPTIR_ROOT) not in sys.path:
     sys.path.insert(0, str(PROMPTIR_ROOT))
 
-from net.model import PromptIR
+from net.model import build_promptir_model_from_options
 from options import options as opt
 from utils.dataset_utils import PromptTrainDataset
 from utils.pytorch_ssim import ssim
@@ -59,7 +59,7 @@ def select_multi_gpu_strategy():
 class PromptIRExtraPairModel(pl.LightningModule):
     def __init__(self, p_target_m_target=0.1, p_target_mm_input=0.1):
         super().__init__()
-        self.net = PromptIR(decoder=True)
+        self.net = build_promptir_model_from_options(opt, decoder=True)
         self.loss_fn = nn.L1Loss()
         self.p_target_m_target = float(p_target_m_target)
         self.p_target_mm_input = float(p_target_mm_input)

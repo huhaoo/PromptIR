@@ -13,7 +13,7 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.strategies import StrategyRegistry
 from torch.utils.data import DataLoader
 
-from net.model import PromptIR
+from net.model import build_promptir_model_from_options
 from options import options as opt
 from utils.dataset_utils import PromptTrainDataset
 from utils.pytorch_ssim import ssim
@@ -56,10 +56,28 @@ def select_multi_gpu_strategy():
     return None
 
 
+class checkpoint_epoch_step_plus_one(ModelCheckpoint):
+    def format_checkpoint_name(self, metrics, filename=None, ver=None) -> str:
+        adjusted = dict(metrics)
+
+        if "epoch" in adjusted:
+            try:
+                adjusted["epoch"] = int(adjusted["epoch"]) + 1
+            except Exception:
+                pass
+        if "step" in adjusted:
+            try:
+                adjusted["step"] = int(adjusted["step"]) + 1
+            except Exception:
+                pass
+
+        return super().format_checkpoint_name(adjusted, filename=filename, ver=ver)
+
+
 class PromptIRAdvModel(pl.LightningModule):
     def __init__(self, train_dataset=None):
         super().__init__()
-        self.net = PromptIR(decoder=True)
+        self.net = build_promptir_model_from_options(opt, decoder=True)
         self.loss_fn = nn.L1Loss()
         self.train_dataset = train_dataset
 
@@ -157,7 +175,13 @@ def main():
     val_opt.degradation_size = None
     valset = PromptTrainDataset(val_opt)
 
-    checkpoint_callback = ModelCheckpoint(dirpath=opt.ckpt_dir, every_n_epochs=1, save_top_k=-1)
+    checkpoint_callback = checkpoint_epoch_step_plus_one(
+        dirpath=opt.ckpt_dir,
+        filename="epoch={epoch}-step={step}",
+        auto_insert_metric_name=False,
+        every_n_epochs=8,
+        save_top_k=-1,
+    )
     trainloader = DataLoader(
         trainset,
         batch_size=opt.batch_size,

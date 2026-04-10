@@ -11,6 +11,6 @@ conda run -n "promptir" --no-capture-output \
   --num_gpus "3" \
   --p_target_m_target "0.1" \
   --p_target_mm_input "0.1" \
-  --ckpt_dir "train_ckpt_noise50_expairs" \
+  --ckpt_dir "/home/huhao/adv_ir/exp/train_ckpt_noise50_expairs" \
   --degradation_size 32768 \
   --auto_resume

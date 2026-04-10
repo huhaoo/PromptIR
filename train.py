@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 import os
 
 from utils.dataset_utils import PromptTrainDataset
-from net.model import PromptIR
+from net.model import build_promptir_model_from_options
 from utils.schedulers import LinearWarmupCosineAnnealingLR
 import numpy as np
 import wandb
@@ -40,7 +40,7 @@ def resolve_resume_checkpoint(resume_ckpt, ckpt_dir, auto_resume):
 class PromptIRModel(pl.LightningModule):
     def __init__(self):
         super().__init__()
-        self.net = PromptIR(decoder=True)
+        self.net = build_promptir_model_from_options(opt, decoder=True)
         self.loss_fn  = nn.L1Loss()
     
     def forward(self,x):
@@ -152,6 +152,5 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
 

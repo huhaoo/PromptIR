@@ -8,7 +8,7 @@ conda run -n "advir" --no-capture-output \
   --patch_size "128" \
   --num_workers "8" \
   --num_gpus "2" \
-  --ckpt_dir "train_ckpt_adv50" \
+  --ckpt_dir "/home/huhao/adv_ir/exp/train_ckpt_adv50" \
   --adv_ratio "0.2" \
   --adv_resample_epochs "4" \
   --adv_steps1 "3" \
