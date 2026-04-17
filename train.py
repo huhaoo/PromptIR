@@ -37,6 +37,24 @@ def resolve_resume_checkpoint(resume_ckpt, ckpt_dir, auto_resume):
     return None
 
 
+class checkpoint_epoch_step_plus_one(ModelCheckpoint):
+    def format_checkpoint_name(self, metrics, filename=None, ver=None) -> str:
+        adjusted = dict(metrics)
+
+        if "epoch" in adjusted:
+            try:
+                adjusted["epoch"] = int(adjusted["epoch"]) + 1
+            except Exception:
+                pass
+        if "step" in adjusted:
+            try:
+                adjusted["step"] = int(adjusted["step"]) + 1
+            except Exception:
+                pass
+
+        return super().format_checkpoint_name(adjusted, filename=filename, ver=ver)
+
+
 class PromptIRModel(pl.LightningModule):
     def __init__(self):
         super().__init__()
@@ -113,7 +131,14 @@ def main():
     # Keep full val split without synthetic repeat/downsample.
     val_opt.degradation_size = None
     valset = PromptTrainDataset(val_opt)
-    checkpoint_callback = ModelCheckpoint(dirpath = opt.ckpt_dir,every_n_epochs = 1,save_top_k=-1)
+    checkpoint_callback = checkpoint_epoch_step_plus_one(
+        dirpath=opt.ckpt_dir,
+        filename="epoch={epoch}-step={step}",
+        auto_insert_metric_name=False,
+        every_n_epochs=8,
+        save_top_k=-1,
+        save_on_train_epoch_end=True,
+    )
     trainloader = DataLoader(trainset, batch_size=opt.batch_size, pin_memory=True, shuffle=True,
                              drop_last=True, num_workers=opt.num_workers)
     valloader = DataLoader(valset, batch_size=opt.batch_size, pin_memory=True, shuffle=False,
@@ -152,5 +177,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
