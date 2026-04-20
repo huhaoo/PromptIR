@@ -121,7 +121,8 @@ def main():
     print("Options")
     print(opt)
     if opt.wblogger is not None:
-        logger  = WandbLogger(project=opt.wblogger,name="PromptIR-Train")
+        run_name = str(getattr(opt, "wandb_run_name", "")).strip() or "PromptIR-Train"
+        logger  = WandbLogger(project=opt.wblogger, name=run_name)
     else:
         logger = TensorBoardLogger(save_dir = "logs/")
 
@@ -177,4 +178,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

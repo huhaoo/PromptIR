@@ -161,7 +161,8 @@ def main():
     print(opt)
 
     if opt.wblogger is not None:
-        logger = WandbLogger(project=opt.wblogger, name="PromptIR-Train-ExtraPairs")
+        run_name = str(getattr(opt, "wandb_run_name", "")).strip() or "PromptIR-Train-ExtraPairs"
+        logger = WandbLogger(project=opt.wblogger, name=run_name)
     else:
         logger = TensorBoardLogger(save_dir="logs/")
 

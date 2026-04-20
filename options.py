@@ -29,9 +29,13 @@ parser.add_argument('--derain_dir', type=str, default='/home/huhao/adv_ir/datase
                     help='where training images of deraining saves.')
 parser.add_argument('--dehaze_dir', type=str, default='/home/huhao/adv_ir/dataset/',
                     help='where training images of dehazing saves.')
+parser.add_argument('--motion_blur_dir', type=str, default='/home/huhao/adv_ir/dataset/motion_sim',
+                    help='root directory of motion blur paired dataset (<split>/input and <split>/target).')
 parser.add_argument('--output_path', type=str, default="output/", help='output save path')
 parser.add_argument('--ckpt_path', type=str, default="ckpt/Denoise/", help='checkpoint save path')
 parser.add_argument("--wblogger",type=str,default="promptir",help = "Determine to log to wandb or not and the project name")
+parser.add_argument("--wandb_run_name", type=str, default="",
+                    help="wandb run name override; empty keeps entrypoint default name")
 parser.add_argument("--ckpt_dir",type=str,default="train_ckpt",help = "Name of the Directory where the checkpoint is to be saved")
 parser.add_argument("--resume_ckpt", type=str, default="",
                     help="path to a checkpoint file to resume training from")

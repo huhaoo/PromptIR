@@ -162,8 +162,14 @@ def main():
         print("[adv_train] forcing adv_enable=True for this entrypoint")
         opt.adv_enable = True
 
+    # Keep adversarial resample cache scoped to the checkpoint directory.
+    adv_cache_root = Path(opt.ckpt_dir).expanduser().resolve() / "adv_data"
+    opt.adv_cache_root = str(adv_cache_root)
+    print(f"[adv_train] adv_cache_root is pinned to: {opt.adv_cache_root}")
+
     if opt.wblogger is not None:
-        logger = WandbLogger(project=opt.wblogger, name="PromptIR-AdvTrain")
+        run_name = str(getattr(opt, "wandb_run_name", "")).strip() or "PromptIR-AdvTrain"
+        logger = WandbLogger(project=opt.wblogger, name=run_name)
     else:
         logger = TensorBoardLogger(save_dir="logs/")
 

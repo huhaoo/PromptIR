@@ -20,6 +20,7 @@ class PromptTrainDataset(Dataset):
         self.legacy_train_root = os.path.join(self.repo_root, 'data', 'Train')
         self.rs_ids = []
         self.hazy_ids = []
+        self.motion_blur_ids = []
         self.D = Degradation(args)
         self.de_temp = 0
         self.de_type = self.args.de_type
@@ -33,7 +34,17 @@ class PromptTrainDataset(Dataset):
         print(self.de_type)
         print("Data split : {}".format(self.data_split))
 
-        self.de_dict = {'denoise_15': 0, 'denoise_25': 1, 'denoise_50': 2, 'derain': 3, 'dehaze': 4, 'deblur' : 5}
+        # Keep backward compatibility for "deblur" while enabling explicit motion blur training.
+        self.de_dict = {
+            'denoise_15': 0,
+            'denoise_25': 1,
+            'denoise_50': 2,
+            'derain': 3,
+            'dehaze': 4,
+            'deblur': 5,
+            'motion_blur': 5,
+            'de_motion_blur': 5,
+        }
 
         self._init_ids()
         self._merge_ids()
@@ -119,8 +130,17 @@ class PromptTrainDataset(Dataset):
             self._init_rs_ids()
         if 'dehaze' in self.de_type:
             self._init_hazy_ids()
+        if self._is_motion_blur_enabled():
+            self._init_motion_blur_ids()
 
         random.shuffle(self.de_type)
+
+    def _is_motion_blur_enabled(self):
+        return (
+            'motion_blur' in self.de_type
+            or 'de_motion_blur' in self.de_type
+            or 'deblur' in self.de_type
+        )
 
     def _init_clean_ids(self):
         ref_file = self._resolve_manifest("noisy", "denoise_airnet")
@@ -181,6 +201,69 @@ class PromptTrainDataset(Dataset):
         self.rl_counter = 0
         self.num_rl = len(self.rs_ids)
         print("Total Rainy Ids : {}".format(self.num_rl))
+
+    def _init_motion_blur_ids(self):
+        motion_blur_root = getattr(
+            self.args,
+            "motion_blur_dir",
+            "/home/huhao/adv_ir/dataset/motion_sim",
+        )
+        if not os.path.isabs(motion_blur_root):
+            motion_blur_root = os.path.abspath(os.path.join(self.repo_root, motion_blur_root))
+
+        split_root = os.path.join(motion_blur_root, self.data_split)
+        input_dir = os.path.join(split_root, "input")
+        target_dir = os.path.join(split_root, "target")
+
+        # Support both split layout (<root>/<split>/input|target) and direct layout (<root>/input|target).
+        if not (os.path.isdir(input_dir) and os.path.isdir(target_dir)):
+            input_dir = os.path.join(motion_blur_root, "input")
+            target_dir = os.path.join(motion_blur_root, "target")
+
+        if not (os.path.isdir(input_dir) and os.path.isdir(target_dir)):
+            raise FileNotFoundError(
+                "motion_blur dataset not found, expected input/target dirs under "
+                f"{os.path.join(motion_blur_root, self.data_split)} or {motion_blur_root}"
+            )
+
+        valid_exts = (".png", ".jpg", ".jpeg", ".bmp")
+        input_names = sorted(
+            name for name in os.listdir(input_dir)
+            if name.lower().endswith(valid_exts)
+        )
+
+        paired_ids = []
+        for name in input_names:
+            input_path = os.path.join(input_dir, name)
+            target_path = os.path.join(target_dir, name)
+            if os.path.exists(target_path):
+                paired_ids.append(
+                    {
+                        "clean_id": input_path,
+                        "target_id": target_path,
+                        "de_type": 5,
+                    }
+                )
+
+        if len(paired_ids) == 0:
+            raise RuntimeError(
+                f"motion_blur dataset has no valid input-target pairs: {input_dir} <-> {target_dir}"
+            )
+
+        if self.degradation_size is None:
+            self.motion_blur_ids = paired_ids.copy()
+            random.shuffle(self.motion_blur_ids)
+        elif len(paired_ids) >= self.degradation_size:
+            self.motion_blur_ids = random.sample(paired_ids, self.degradation_size)
+        else:
+            repeat = (self.degradation_size + len(paired_ids) - 1) // len(paired_ids)
+            self.motion_blur_ids = (paired_ids * repeat)[:self.degradation_size]
+            random.shuffle(self.motion_blur_ids)
+
+        self.motion_blur_counter = 0
+        self.num_motion_blur = len(self.motion_blur_ids)
+        print("Total Motion Blur Source Pairs : {}".format(len(paired_ids)))
+        print("Total Motion Blur Ids : {}".format(self.num_motion_blur))
     
 
     def _crop_patch(self, img_1, img_2):
@@ -258,6 +341,8 @@ class PromptTrainDataset(Dataset):
         
         if "dehaze" in self.de_type:
             self.sample_ids+= self.hazy_ids
+        if self._is_motion_blur_enabled():
+            self.sample_ids += self.motion_blur_ids
         print(len(self.sample_ids))
 
     def __getitem__(self, idx):
@@ -296,6 +381,13 @@ class PromptTrainDataset(Dataset):
                 degrad_img = crop_img(np.array(Image.open(sample["clean_id"]).convert('RGB')), base=16)
                 clean_name = self._get_nonhazy_name(sample["clean_id"])
                 clean_img = crop_img(np.array(Image.open(clean_name).convert('RGB')), base=16)
+            elif de_id == 5:
+                # Motion blur paired dataset: input/<name> <-> target/<name>
+                degrad_img = crop_img(np.array(Image.open(sample["clean_id"]).convert('RGB')), base=16)
+                clean_name = os.path.splitext(os.path.basename(sample["target_id"]))[0]
+                clean_img = crop_img(np.array(Image.open(sample["target_id"]).convert('RGB')), base=16)
+            else:
+                raise ValueError(f"Unsupported de_type id: {de_id}")
 
             if self.data_split == "train":
                 degrad_patch, clean_patch = random_augmentation(*self._crop_patch(degrad_img, clean_img))
@@ -477,4 +569,3 @@ class TestSpecificDataset(Dataset):
     def __len__(self):
         return self.num_img
     
-
