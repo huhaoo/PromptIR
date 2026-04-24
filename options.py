@@ -87,7 +87,7 @@ parser.add_argument("--adv_resample_epochs", type=int, default=8,
 parser.add_argument("--adv_samples_per_resample", type=int, default=0,
                     help="override adversarial sample count per resample; 0 means auto by adv_ratio")
 parser.add_argument("--adv_aug_k", type=int, default=1,
-                    help="for haze-only adversarial generation: build n/k adversarial samples then use simple augmentations to expand to n")
+                    help="for online adversarial generation: build n/k adversarial samples then use simple augmentations to expand to n")
 parser.add_argument("--adv_steps1", type=int, default=2,
                     help="PromptIR-call steps for adversarial generation")
 parser.add_argument("--adv_steps2", type=int, default=2,
@@ -116,5 +116,19 @@ parser.add_argument("--adv_gaussian_sigma", type=float, default=1.25,
                     help="gaussian interpolation sigma (effective when adv_map_interp_mode=gaussian)")
 parser.add_argument("--adv_gaussian_extra_cells", type=int, default=2,
                     help="extra boundary cells for gaussian interpolation (effective when adv_map_interp_mode=gaussian)")
+parser.add_argument("--adv_gaussian_enable_offset", action="store_true",
+                    help="enable trainable gaussian-kernel center offsets in adversarial control-map interpolation")
+parser.add_argument("--adv_gaussian_offset_max", type=float, default=0.5,
+                    help="max absolute low-res offset (in cell units) for gaussian-kernel center perturbation")
+parser.add_argument("--adv_gaussian_offset_lambda_first_order", type=float, default=0.05,
+                    help="first-order smoothness regularization weight for gaussian offset map")
+parser.add_argument("--adv_gaussian_offset_lambda_second_order", type=float, default=0.2,
+                    help="second-order smoothness regularization weight for gaussian offset map")
+parser.add_argument("--adv_motion_num_steps", type=int, default=16,
+                    help="motion blur adversarial generation: K sampling steps per blur integral")
+parser.add_argument("--adv_motion_dmax", type=float, default=-0.02,
+                    help="motion blur adversarial generation: dmax for dx magnitude limit (negative means ratio to diagonal)")
+parser.add_argument("--adv_motion_dlambda", type=float, default=0.0,
+                    help="motion blur adversarial generation: regularization weight for dx magnitude")
 
 options = parser.parse_args()
