@@ -130,5 +130,17 @@ parser.add_argument("--adv_motion_dmax", type=float, default=-0.02,
                     help="motion blur adversarial generation: dmax for dx magnitude limit (negative means ratio to diagonal)")
 parser.add_argument("--adv_motion_dlambda", type=float, default=0.0,
                     help="motion blur adversarial generation: regularization weight for dx magnitude")
+parser.add_argument("--adv_haze_airlight_min", type=float, default=0.85,
+                    help="haze adversarial generation: per-image global airlight lower bound")
+parser.add_argument("--adv_haze_airlight_max", type=float, default=1.0,
+                    help="haze adversarial generation: per-image global airlight upper bound")
+parser.add_argument("--adv_haze_airlight_jitter", type=float, default=0.02,
+                    help="haze adversarial generation: per-channel airlight jitter amplitude before clamping")
+parser.add_argument("--adv_haze_beta_mean_min", type=float, default=0.1,
+                    help="haze adversarial generation: beta_mean lower bound")
+parser.add_argument("--adv_haze_beta_mean_max", type=float, default=0.5,
+                    help="haze adversarial generation: beta_mean upper bound")
+parser.add_argument("--adv_haze_beta_mean_log_uniform", action="store_true",
+                    help="haze adversarial generation: sample beta_mean with log-uniform instead of linear-uniform")
 
 options = parser.parse_args()

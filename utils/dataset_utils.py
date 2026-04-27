@@ -34,7 +34,7 @@ class PromptTrainDataset(Dataset):
         print(self.de_type)
         print("Data split : {}".format(self.data_split))
 
-        # Keep backward compatibility for "deblur" while enabling explicit motion blur training.
+        # Keep backward compatibility for legacy names while enabling explicit motion blur training.
         self.de_dict = {
             'denoise_15': 0,
             'denoise_25': 1,
@@ -44,6 +44,7 @@ class PromptTrainDataset(Dataset):
             'deblur': 5,
             'motion_blur': 5,
             'de_motion_blur': 5,
+            'haze_hard': 5,
         }
 
         self._init_ids()
@@ -140,6 +141,7 @@ class PromptTrainDataset(Dataset):
             'motion_blur' in self.de_type
             or 'de_motion_blur' in self.de_type
             or 'deblur' in self.de_type
+            or 'haze_hard' in self.de_type
         )
 
     def _init_clean_ids(self):
