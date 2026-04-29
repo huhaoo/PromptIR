@@ -120,6 +120,10 @@ parser.add_argument("--adv_gaussian_enable_offset", action="store_true",
                     help="enable trainable gaussian-kernel center offsets in adversarial control-map interpolation")
 parser.add_argument("--adv_gaussian_offset_max", type=float, default=0.5,
                     help="max absolute low-res offset (in cell units) for gaussian-kernel center perturbation")
+parser.add_argument("--adv_map_lambda_first_order", type=float, default=0.1,
+                    help="first-order smoothness regularization weight for control-map value field")
+parser.add_argument("--adv_map_lambda_second_order", type=float, default=0.5,
+                    help="second-order smoothness regularization weight for control-map value field")
 parser.add_argument("--adv_gaussian_offset_lambda_first_order", type=float, default=0.05,
                     help="first-order smoothness regularization weight for gaussian offset map")
 parser.add_argument("--adv_gaussian_offset_lambda_second_order", type=float, default=0.2,
@@ -127,9 +131,13 @@ parser.add_argument("--adv_gaussian_offset_lambda_second_order", type=float, def
 parser.add_argument("--adv_motion_num_steps", type=int, default=16,
                     help="motion blur adversarial generation: K sampling steps per blur integral")
 parser.add_argument("--adv_motion_dmax", type=float, default=-0.02,
-                    help="motion blur adversarial generation: dmax for dx magnitude limit (negative means ratio to diagonal)")
+                    help="motion blur adversarial generation: dmax for |dx| limit in diagonal-normalized unit (sign ignored)")
 parser.add_argument("--adv_motion_dlambda", type=float, default=0.0,
                     help="motion blur adversarial generation: regularization weight for dx magnitude")
+parser.add_argument("--adv_motion_low_res_height", type=int, default=None,
+                    help="motion blur adversarial generation: optional low-res control-map height override")
+parser.add_argument("--adv_motion_low_res_width", type=int, default=None,
+                    help="motion blur adversarial generation: optional low-res control-map width override")
 parser.add_argument("--adv_haze_airlight_min", type=float, default=0.85,
                     help="haze adversarial generation: per-image global airlight lower bound")
 parser.add_argument("--adv_haze_airlight_max", type=float, default=1.0,
