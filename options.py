@@ -86,6 +86,8 @@ parser.add_argument("--adv_resample_epochs", type=int, default=8,
                     help="resample adversarial sample pool every N epochs")
 parser.add_argument("--adv_samples_per_resample", type=int, default=0,
                     help="override adversarial sample count per resample; 0 means auto by adv_ratio")
+parser.add_argument("--adv_resample_workers_per_gpu", type=int, default=1,
+                    help="online adversarial resampling workers per GPU process (>=1)")
 parser.add_argument("--adv_aug_k", type=int, default=1,
                     help="for online adversarial generation: build n/k adversarial samples then use simple augmentations to expand to n")
 parser.add_argument("--adv_steps1", type=int, default=2,
@@ -107,6 +109,9 @@ parser.add_argument("--adv_cache_root", type=str,
                     help="root directory for generated adversarial input/target pair folders")
 parser.add_argument("--adv_attack_device", type=str, default="cuda", choices=["cpu", "cuda"],
                     help="device used to generate adversarial samples")
+parser.add_argument("--adv_attack_subset", type=str, default="auto",
+                    choices=["auto", "haze", "motion_blur"],
+                    help="force adversarial generation subset; auto selects all available subsets")
 parser.add_argument("--adv_map_interp_mode", type=str, default="bicubic",
                     choices=["nearest", "bilinear", "bicubic", "area", "gaussian"],
                     help="interpolation mode for lowres->highres control map in adversarial degradation")
@@ -144,11 +149,19 @@ parser.add_argument("--adv_haze_airlight_max", type=float, default=1.0,
                     help="haze adversarial generation: per-image global airlight upper bound")
 parser.add_argument("--adv_haze_airlight_jitter", type=float, default=0.02,
                     help="haze adversarial generation: per-channel airlight jitter amplitude before clamping")
+parser.add_argument("--adv_haze_airlight_ratio_a", type=float, default=0.02,
+                    help="haze adversarial generation: ratio lower span for g/r and b/g, sampled in [1-a, 1+b]")
+parser.add_argument("--adv_haze_airlight_ratio_b", type=float, default=0.02,
+                    help="haze adversarial generation: ratio upper span for g/r and b/g, sampled in [1-a, 1+b]")
 parser.add_argument("--adv_haze_beta_mean_min", type=float, default=0.1,
                     help="haze adversarial generation: beta_mean lower bound")
 parser.add_argument("--adv_haze_beta_mean_max", type=float, default=0.5,
                     help="haze adversarial generation: beta_mean upper bound")
 parser.add_argument("--adv_haze_beta_mean_log_uniform", action="store_true",
                     help="haze adversarial generation: sample beta_mean with log-uniform instead of linear-uniform")
+parser.add_argument("--adv_save_density_maps", action="store_true",
+                    help="save per-sample density map visualization for adversarial haze generation")
+parser.add_argument("--adv_save_depth_maps", action="store_true",
+                    help="save per-sample depth map visualization aligned with generated adversarial samples")
 
 options = parser.parse_args()
